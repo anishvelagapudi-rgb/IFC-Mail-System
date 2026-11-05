@@ -1,0 +1,5 @@
+numpy>=1.26,<3
+Pillow>=10.3
+opencv-python-headless>=4.9
+Faker>=25.0
+PyYAML>=6.0

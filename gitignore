@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+
+# dataset-generator: downloaded fonts and generated output (reproducible via setup_fonts.py / generate.py)
+dataset-generator/fonts/
+dataset-generator/dataset/
+predictions/
+*.zip
