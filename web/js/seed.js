@@ -1,5 +1,6 @@
 // Sample data so the UI can be tried without real mail. Images are drawn placeholders.
 import * as store from './store.js';
+import * as auth from './auth.js';
 
 function drawEnvelope(lines, side) {
   const c = document.createElement('canvas');
@@ -23,7 +24,7 @@ function drawEnvelope(lines, side) {
 const DAY = 86400000;
 
 export async function loadSampleData() {
-  const dot = await store.saveMember({ name: 'Dorothy Briggs', aliases: ['Dot Briggs', 'Dorothy H Briggs'], phone: '919-555-0101', trustedContacts: [{ id: store.newId(), name: 'Marcus Lee', relationship: 'case manager', phone: '919-555-0140' }] });
+  const dot = await store.saveMember({ name: 'Dorothy Briggs', aliases: ['Dot Briggs', 'Dorothy H Briggs'], phone: '919-555-0101', email: '', trustedContacts: [{ id: store.newId(), name: 'Marcus Lee', relationship: 'case manager', phone: '919-555-0140', address: '210 Weaver St, Carrboro, NC 27510' }] });
   const bill = await store.saveMember({ name: 'William Ortiz', aliases: ['Bill Ortiz'], phone: '', trustedContacts: [] });
   await store.saveMember({ name: 'Renee Carter', aliases: [], phone: '919-555-0177', trustedContacts: [] });
 
@@ -55,4 +56,22 @@ export async function loadSampleData() {
     if (it.status === 'ready') await store.confirmMail(mail);
     else await store.saveMail(mail);
   }
+  return { dot };
+}
+
+export const DEMO_ACCOUNTS = [
+  { username: 'staff', password: 'staff123', role: 'Org admin' },
+  { username: 'dorothy', password: 'dorothy123', role: 'Member (Dorothy Briggs)' },
+];
+
+// A demo organization with an admin login, a member login and sample mail.
+export async function createDemoOrg() {
+  const org = await store.createOrg('Demo Shelter (sample data)');
+  store.useOrg(org.id);
+  await auth.createUser({ username: 'staff', password: 'staff123', role: 'admin', orgId: org.id, name: 'Demo Staff' });
+  const { dot } = await loadSampleData();
+  const user = await auth.createUser({ username: 'dorothy', password: 'dorothy123', role: 'member', orgId: org.id, memberId: dot.id, name: dot.name });
+  await store.saveMember({ ...dot, userId: user.id, registeredAt: new Date().toISOString() });
+  await store.addMessage({ memberId: dot.id, from: 'member', body: 'Hi, can someone tell me when the DMV letter came in?' });
+  store.useOrg(null);
 }

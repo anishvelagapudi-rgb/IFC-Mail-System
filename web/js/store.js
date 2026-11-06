@@ -1,4 +1,7 @@
-// Domain operations on top of db.js. Views only talk to this file.
+// Domain operations on top of db.js. Views only talk to this file (and auth.js).
+//
+// Everything is scoped to the "current organization" set by useOrg() at login. Records from
+// other orgs are invisible: list*() filters them out and get*() returns null for them.
 import * as db from './db.js';
 import { DEFAULT_SETTINGS } from './retention.js';
 
@@ -8,17 +11,42 @@ const uid = () =>
     ? crypto.randomUUID()
     : ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, (c) => (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16));
 const now = () => new Date().toISOString();
+export const newId = uid;
+
+// ---------- org scope ----------
+let orgId = null;
+export const useOrg = (id) => {
+  orgId = id || null;
+};
+export const currentOrgId = () => orgId;
+const inOrg = (r) => !!r && !!orgId && r.orgId === orgId;
+const all = async (store) => (await db.getAll(store)).filter(inOrg);
+const one = async (store, id) => {
+  if (!id) return null;
+  const r = await db.get(store, id);
+  return inOrg(r) ? r : null;
+};
+const put = (store, r) => db.put(store, { ...r, orgId: r.orgId || orgId });
+
+// ---------- organizations ----------
+export const listOrgs = async () => (await db.getAll('orgs')).sort((a, b) => a.name.localeCompare(b.name));
+export const getOrg = (id) => (id ? db.get('orgs', id) : null);
+export async function createOrg(name) {
+  const org = { id: uid(), name: name.trim(), createdAt: now() };
+  await db.put('orgs', org);
+  return org;
+}
 
 // ---------- settings ----------
 export async function getSettings() {
-  const saved = (await db.get('settings', 'app')) || {};
+  const saved = (orgId && (await db.get('settings', `app:${orgId}`))) || {};
   return {
     ...DEFAULT_SETTINGS,
     ...saved,
     retentionDays: { ...DEFAULT_SETTINGS.retentionDays, ...(saved.retentionDays || {}) },
   };
 }
-export const saveSettings = (s) => db.put('settings', { ...s, key: 'app' });
+export const saveSettings = (s) => db.put('settings', { ...s, key: `app:${orgId}` });
 
 // ---------- images ----------
 const urlCache = new Map();
@@ -45,14 +73,15 @@ async function deleteImage(id) {
 }
 
 // ---------- members ----------
-export const listMembers = async () => (await db.getAll('members')).sort((a, b) => a.name.localeCompare(b.name));
-export const getMember = (id) => (id ? db.get('members', id) : null);
+// member { id, orgId, name, aliases[], phone, email, trustedContacts[{ id, name, relationship, phone, address }],
+//          userId?, registeredAt? }
+export const listMembers = async () => (await all('members')).sort((a, b) => a.name.localeCompare(b.name));
+export const getMember = (id) => one('members', id);
 export async function saveMember(m) {
-  const member = { id: m.id || uid(), name: '', aliases: [], phone: '', trustedContacts: [], ...m };
+  const member = { id: m.id || uid(), name: '', aliases: [], phone: '', email: '', trustedContacts: [], ...m, orgId: m.orgId || orgId };
   await db.put('members', member);
   return member;
 }
-export const newId = uid;
 
 const norm = (s) =>
   (s || '')
@@ -72,9 +101,13 @@ export function matchMember(name, members) {
 }
 
 // ---------- mail ----------
-export const listMail = async () => (await db.getAll('mail')).sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
-export const getMail = (id) => db.get('mail', id);
-export const saveMail = (m) => db.put('mail', m);
+export const listMail = async () => (await all('mail')).sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
+export const getMail = (id) => one('mail', id);
+export const saveMail = (m) => put('mail', m);
+
+// What a member can see: confirmed mail addressed to them (unconfirmed items may be mis-matched).
+export const listMailForMember = async (memberId) =>
+  (await listMail()).filter((m) => m.recipient.memberId === memberId && m.status !== 'needs_review');
 
 export async function createMail({ front, back, processed }) {
   const [frontImageId, backImageId, members] = await Promise.all([
@@ -85,6 +118,7 @@ export async function createMail({ front, back, processed }) {
   const member = matchMember(processed.recipient.name, members);
   const mail = {
     id: uid(),
+    orgId,
     receivedAt: now(),
     frontImageId,
     backImageId,
@@ -116,12 +150,12 @@ async function notify(mail) {
   if (!member) return;
   const from = mail.sender.organization || mail.sender.name || 'an unknown sender';
   // 'queued' only: actual delivery (in-app + SMS) is the backend's job.
-  await db.put('notifications', {
+  await put('notifications', {
     id: uid(),
     mailId: mail.id,
     memberId: member.id,
     channels: member.phone ? ['app', 'sms'] : ['app'],
-    body: `You have new mail from ${from}. Please pick it up at IFC.`,
+    body: `You have new mail from ${from}. Please pick it up.`,
     status: 'queued',
     at: now(),
   });
@@ -146,10 +180,12 @@ export async function closeMail(id, outcome, extra = {}) {
 }
 
 // ---------- requests ----------
-export const listRequests = async () => (await db.getAll('requests')).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+// type: 'extra_time' { days } | 'scan' {} | 'redirect' { proxyNames[], address, relationship?, phone?, contactId? }
+export const listRequests = async () => (await all('requests')).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 export async function createRequest(mail, type, payload = {}) {
   const req = {
     id: uid(),
+    orgId,
     mailId: mail.id,
     memberId: mail.recipient.memberId,
     type,
@@ -163,17 +199,53 @@ export async function createRequest(mail, type, payload = {}) {
 export async function resolveRequest(req, status, note) {
   req.status = status;
   req.resolvedAt = now();
-  await db.put('requests', req);
-  if (note) await addMessage(req.mailId, 'system', note, req.id);
+  await put('requests', req);
+  if (note) await addMessage({ memberId: req.memberId, mailId: req.mailId, requestId: req.id, from: 'system', body: note });
 }
 
 // ---------- messaging ----------
-export const listMessages = async (mailId) =>
-  (await db.getAll('messages')).filter((m) => m.mailId === mailId).sort((a, b) => a.at.localeCompare(b.at));
-export const addMessage = (mailId, from, body, requestId) =>
-  db.put('messages', { id: uid(), mailId, requestId: requestId || null, from, body, at: now() });
+// message { id, orgId, memberId, mailId|null, requestId|null, from: 'staff'|'member'|'system', body, at,
+//           seenByStaff, seenByMember }
+// mailId null = a general conversation between the member and staff.
+export const listAllMessages = async () => (await all('messages')).sort((a, b) => a.at.localeCompare(b.at));
+export const listMessages = async (mailId) => (await listAllMessages()).filter((m) => m.mailId === mailId);
+export const listMemberMessages = async (memberId) => (await listAllMessages()).filter((m) => m.memberId === memberId);
+
+export function addMessage({ memberId, mailId = null, requestId = null, from, body }) {
+  return db.put('messages', {
+    id: uid(),
+    orgId,
+    memberId,
+    mailId,
+    requestId,
+    from,
+    body,
+    at: now(),
+    seenByStaff: from !== 'member',
+    seenByMember: from === 'member',
+  });
+}
+
+// role 'staff' | 'member'. Pass mailId to only mark that item's thread.
+export async function markSeen(role, memberId, mailId) {
+  const field = role === 'staff' ? 'seenByStaff' : 'seenByMember';
+  for (const m of await listMemberMessages(memberId)) {
+    if (m[field] || (mailId !== undefined && m.mailId !== mailId)) continue;
+    await db.put('messages', { ...m, [field]: true });
+  }
+}
 
 export const listNotifications = async (mailId) =>
-  (await db.getAll('notifications')).filter((n) => n.mailId === mailId).sort((a, b) => a.at.localeCompare(b.at));
+  (await all('notifications')).filter((n) => n.mailId === mailId).sort((a, b) => a.at.localeCompare(b.at));
+
+// Delete this org's mail, members, requests, messages and member logins. Staff logins stay.
+export async function wipeOrgData() {
+  for (const m of await all('mail')) {
+    for (const imgId of [m.frontImageId, m.backImageId, ...(m.scanImageIds || [])]) if (imgId) await deleteImage(imgId);
+    await db.del('mail', m.id);
+  }
+  for (const s of ['members', 'requests', 'messages', 'notifications']) for (const r of await all(s)) await db.del(s, r.id);
+  for (const u of await all('users')) if (u.role === 'member') await db.del('users', u.id);
+}
 
 export const wipeEverything = db.clearAll;

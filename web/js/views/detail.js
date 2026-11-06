@@ -2,9 +2,8 @@ import { h, badge, toast, fmtDateTime, fmtDay, daysUntil, toLocalInput, fromLoca
 import { SENDER_TYPES, discardAfter, isTimeSensitive, baseDays } from '../retention.js';
 import { toJpeg } from '../camera.js';
 import * as store from '../store.js';
-
-const REQUEST_LABEL = { extra_time: 'Extra time', scan: 'Scanned copy', redirect: 'Redirect to trusted person' };
-const OUTCOME_LABEL = { picked_up: 'Picked up', redirected: 'Redirected', discarded: 'Discarded' };
+import { REQUEST_LABEL, OUTCOME_LABEL, describeRequest, forwardTarget, statusKind } from '../requests-format.js';
+import { threadList, composer, zoom } from './shared.js';
 
 export function detailView(id) {
   const root = h('section', { class: 'view' });
@@ -32,13 +31,13 @@ export function detailView(id) {
         'div',
         { class: 'cols' },
         h('div', null, imagesCard(mail)),
-        h('div', null, detailsForm(mail, members, settings, closed), actionsCard(mail, member, closed)),
+        h('div', null, detailsForm(mail, members, settings, closed), actionsCard(mail, member, closed, requests)),
       ),
       requestsCard(mail, requests, member, closed),
       messagesCard(mail, messages, member),
       notificationsCard(notifications, members),
-      member && settings.demoTools ? demoTools(mail, member) : null,
     );
+    if (member) store.markSeen('staff', member.id, id);
   }
 
   // ---------- header ----------
@@ -74,13 +73,6 @@ export function detailView(id) {
       mail.scanImageIds.length ? h('h3', null, 'Scans for member') : null,
       mail.scanImageIds.length ? h('div', { class: 'pair' }, mail.scanImageIds.map((sid, i) => img(sid, `Scan ${i + 1}`))) : null,
     );
-  }
-
-  function zoom(src) {
-    if (!src) return;
-    const dlg = h('dialog', { class: 'zoom', onclick: () => dlg.close(), onclose: () => dlg.remove() }, h('img', { src, alt: 'Enlarged photo' }));
-    document.body.append(dlg);
-    dlg.showModal();
   }
 
   // ---------- details / review form ----------
@@ -165,9 +157,9 @@ export function detailView(id) {
   }
 
   // ---------- close-out actions ----------
-  function actionsCard(mail, member, closed) {
+  function actionsCard(mail, member, closed, requests) {
     if (closed) {
-      return h('div', { class: 'card' }, h('h2', null, 'Closed'), h('p', null, `${OUTCOME_LABEL[mail.outcome]} on ${fmtDateTime(mail.closedAt)}.`), mail.redirectedTo ? h('p', null, `Redirected to ${mail.redirectedTo}.`) : null);
+      return h('div', { class: 'card' }, h('h2', null, 'Closed'), h('p', null, `${OUTCOME_LABEL[mail.outcome]} on ${fmtDateTime(mail.closedAt)}.`), mail.redirectedTo ? h('p', null, `Forwarded to ${mail.redirectedTo}.`) : null);
     }
     const act = (label, cls, fn) => h('button', { class: `btn ${cls}`, type: 'button', onclick: fn }, label);
     return h(
@@ -182,11 +174,14 @@ export function detailView(id) {
           toast('Marked as picked up.');
           render();
         }),
-        act('Mark redirected…', '', async () => {
-          const to = prompt(`Who was this mail handed to?${member?.trustedContacts?.length ? '\nTrusted contacts: ' + member.trustedContacts.map((c) => c.name).join(', ') : ''}`);
+        act('Mark forwarded…', '', async () => {
+          const fwd = requests.find((r) => r.type === 'redirect' && r.status === 'approved');
+          const suggestion = fwd ? `${forwardTarget(fwd.payload)}${fwd.payload.address ? `, ${fwd.payload.address}` : ''}` : '';
+          const to = prompt(`Who was this mail handed or sent to?${member?.trustedContacts?.length ? '\nTrusted people: ' + member.trustedContacts.map((c) => c.name).join('; ') : ''}`, suggestion);
           if (!to) return;
           await store.closeMail(id, 'redirected', { redirectedTo: to.trim() });
-          toast('Marked as redirected.');
+          if (fwd) await store.resolveRequest(fwd, 'fulfilled', `Staff forwarded this mail to ${to.trim()}.`);
+          toast('Marked as forwarded.');
           render();
         }),
         act('Discard…', 'danger', async () => {
@@ -205,12 +200,7 @@ export function detailView(id) {
   // ---------- member requests ----------
   function requestsCard(mail, requests, member, closed) {
     const rows = requests.map((r) => {
-      const detail =
-        r.type === 'extra_time'
-          ? `Asked for ${r.payload.days} more day(s)`
-          : r.type === 'redirect'
-            ? `Redirect to ${r.payload.contactName}${r.payload.contactRelationship ? ` (${r.payload.contactRelationship})` : ''}`
-            : 'Wants a scanned upload';
+      const detail = describeRequest(r);
       const actions = [];
       if (r.status === 'open' && !closed) {
         const decline = h('button', { class: 'btn', type: 'button', onclick: async () => (await store.resolveRequest(r, 'declined', `Staff declined: ${REQUEST_LABEL[r.type].toLowerCase()}.`), render()) }, 'Decline');
@@ -235,40 +225,35 @@ export function detailView(id) {
             const blob = await toJpeg(bmp, bmp.width, bmp.height);
             mail.scanImageIds.push(await store.addImage(blob, 'scan'));
             await store.saveMail(mail);
-            await store.resolveRequest(r, 'fulfilled', 'Staff uploaded a scanned copy for you.');
+            await store.resolveRequest(r, 'fulfilled', 'Staff added a photo of the contents. You can see it on this mail item.');
             render();
           } });
-          actions.push(file, h('button', { class: 'btn primary', type: 'button', onclick: () => file.click() }, 'Upload scan…'), decline);
+          actions.push(file, h('button', { class: 'btn primary', type: 'button', onclick: () => file.click() }, 'Upload photo of contents…'), decline);
         } else {
           actions.push(
-            h('button', { class: 'btn primary', type: 'button', onclick: async () => (await store.resolveRequest(r, 'approved', `Staff approved redirecting this mail to ${r.payload.contactName}. Use “Mark redirected” once handed over.`), render()) }, 'Approve'),
+            h('button', { class: 'btn primary', type: 'button', onclick: async () => (await store.resolveRequest(r, 'approved', `Staff approved forwarding this mail to ${forwardTarget(r.payload)}. You will get an update when it is sent.`), render()) }, 'Approve'),
             decline,
           );
         }
       }
-      return h('li', { class: 'req' }, h('div', null, h('strong', null, REQUEST_LABEL[r.type]), ' ', badge(r.status, r.status === 'open' ? 'warn' : r.status === 'declined' ? 'muted' : 'ok'), h('div', { class: 'hint' }, `${detail} · ${fmtDateTime(r.createdAt)}`)), h('div', { class: 'row' }, actions));
+      return h('li', { class: 'req' }, h('div', null, h('strong', null, REQUEST_LABEL[r.type]), ' ', badge(r.status, statusKind(r.status)), h('div', { class: 'hint' }, `${detail} · ${fmtDateTime(r.createdAt)}`)), h('div', { class: 'row' }, actions));
     });
     return h('div', { class: 'card' }, h('h2', null, 'Member requests'), rows.length ? h('ul', { class: 'plain-list' }, rows) : emptyState(member ? 'No requests from this member.' : 'Match a member account to receive requests.'));
   }
 
   // ---------- messaging ----------
   function messagesCard(mail, messages, member) {
-    const who = { staff: 'IFC staff', member: member?.name || 'Member', system: 'Update' };
-    const body = h('textarea', { rows: 2, placeholder: member ? `Message ${member.name}…` : 'Match a member account to message them', disabled: !member });
-    const send = h('button', { class: 'btn primary', type: 'button', disabled: !member, onclick: async () => {
-      const text = body.value.trim();
-      if (!text) return;
-      await store.addMessage(id, 'staff', text);
-      render();
-    } }, 'Send');
     return h(
       'div',
       { class: 'card' },
-      h('h2', null, 'Messages'),
-      messages.length
-        ? h('ul', { class: 'thread' }, messages.map((m) => h('li', { class: `msg ${m.from}` }, h('div', { class: 'who' }, `${who[m.from]} · ${fmtDateTime(m.at)}`), h('div', null, m.body))))
-        : emptyState('No messages yet.'),
-      h('div', { class: 'composer' }, body, send),
+      h('h2', null, 'Messages about this item'),
+      threadList(messages, { me: 'staff', names: { staff: 'Staff', member: member?.name || 'Member', system: 'Update' } }),
+      composer({
+        placeholder: member ? `Message ${member.name}…` : 'Match a member account to message them',
+        disabled: !member,
+        onSend: async (body) => (await store.addMessage({ memberId: member.id, mailId: id, from: 'staff', body }), render()),
+      }),
+      member ? h('p', { class: 'hint' }, h('a', { href: `#/messages/${member.id}` }, `All messages with ${member.name} →`)) : null,
     );
   }
 
@@ -281,40 +266,6 @@ export function detailView(id) {
         ? h('ul', { class: 'plain-list' }, notifications.map((n) => h('li', null, h('div', null, `To ${members.find((m) => m.id === n.memberId)?.name || 'member'} via ${n.channels.join(' + ')} — `, badge(n.status, 'muted')), h('div', { class: 'hint' }, `${n.body} · ${fmtDateTime(n.at)}`))))
         : emptyState('No notification sent yet. One is queued when you confirm a mail item matched to a member.'),
       h('p', { class: 'hint' }, 'Queued = recorded here. Actual in-app/SMS delivery needs the backend.'),
-    );
-  }
-
-  // ---------- demo tools (stand-in for the member app) ----------
-  function demoTools(mail, member) {
-    const days = h('select', null, [3, 7, 14].map((d) => h('option', { value: d }, `${d} days`)));
-    const contact = h('select', null, (member.trustedContacts || []).map((c) => h('option', { value: c.id }, `${c.name} (${c.relationship})`)));
-    const reply = h('input', { placeholder: 'Reply as member…' });
-    const mk = async (type, payload) => {
-      await store.createRequest(mail, type, payload);
-      toast('Demo request created.');
-      render();
-    };
-    return h(
-      'details',
-      { class: 'card demo' },
-      h('summary', null, `Demo tools — act as ${member.name} (until the member app exists)`),
-      h('div', { class: 'row wrap' }, h('button', { class: 'btn', type: 'button', onclick: () => mk('extra_time', { days: Number(days.value) }) }, 'Request extra time'), days),
-      h('div', { class: 'row wrap' }, h('button', { class: 'btn', type: 'button', onclick: () => mk('scan', {}) }, 'Request scanned copy')),
-      h(
-        'div',
-        { class: 'row wrap' },
-        h('button', { class: 'btn', type: 'button', disabled: !member.trustedContacts?.length, onclick: () => {
-          const c = member.trustedContacts.find((x) => x.id === contact.value);
-          mk('redirect', { contactId: c.id, contactName: c.name, contactRelationship: c.relationship });
-        } }, 'Request redirect'),
-        contact,
-        member.trustedContacts?.length ? null : h('small', null, 'Add a trusted contact under Members first.'),
-      ),
-      h('div', { class: 'row' }, reply, h('button', { class: 'btn', type: 'button', onclick: async () => {
-        if (!reply.value.trim()) return;
-        await store.addMessage(id, 'member', reply.value.trim());
-        render();
-      } }, 'Send')),
     );
   }
 

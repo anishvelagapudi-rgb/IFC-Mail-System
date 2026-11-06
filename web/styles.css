@@ -12,6 +12,7 @@
   --radius: 10px;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--bg); }
 h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
 h2 { font-size: 1.1rem; margin: 0 0 .6rem; }
@@ -110,3 +111,25 @@ dialog.zoom img { max-width: 95vw; max-height: 95vh; display: block; }
 .toast { background: #1d2433; color: #fff; padding: .65rem .9rem; border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, .25); }
 .toast.warn { background: var(--warn); }
 .toast.err { background: var(--err); }
+
+/* ---------- accounts / member app ---------- */
+.acct { margin-left: auto; display: flex; align-items: center; gap: .5rem; font-size: .88rem; }
+.who-name { opacity: .9; }
+.btn.ghost { background: transparent; color: var(--brand-ink); border-color: rgba(255, 255, 255, .5); min-height: 36px; padding: .3rem .7rem; }
+.btn.ghost:hover { border-color: #fff; }
+.auth { max-width: 520px; }
+.auth h1 { margin-top: .5rem; }
+.sub { margin: .2rem 0 .7rem 1.8rem; padding-left: .8rem; border-left: 3px solid var(--line); }
+form.card > label.row { margin: .55rem 0; align-items: flex-start; }
+form.card > label.row input[type=checkbox] { margin-top: .3rem; }
+.msg.mine { background: #dbe8fb; margin-left: auto; }
+.msg.staff:not(.mine) { background: #eef1f6; margin-left: 0; }
+.msg .who { display: block; margin: 0; font-size: .75rem; color: var(--muted); }
+.msg .who a { color: inherit; }
+.clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60ch; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: .2rem .9rem; margin: .2rem 0 .7rem; }
+.facts dt { color: var(--muted); font-size: .88rem; }
+.facts dd { margin: 0; }
+.card.focus { border-color: var(--brand); box-shadow: 0 0 0 2px rgba(31, 78, 140, .2); }
+.spacer { height: 1rem; }
+details.card > summary { cursor: pointer; }

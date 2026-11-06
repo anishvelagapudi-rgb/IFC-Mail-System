@@ -5,7 +5,6 @@ export const SENDER_TYPES = ['government', 'bank', 'healthcare', 'employer', 'pe
 
 export const DEFAULT_SETTINGS = {
   pipelineUrl: '',
-  demoTools: true,
   retentionDays: {
     government: 90,
     bank: 30,

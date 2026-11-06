@@ -14,18 +14,22 @@
 //                   status: 'open'|'approved'|'declined'|'fulfilled', payload, createdAt, resolvedAt? }
 //   messages      { id, mailId, requestId?, from: 'staff'|'member'|'system', body, at }
 //   notifications { id, mailId, memberId, channels[], body, status: 'queued', at }
-//   settings      { key, ...value }
+//   settings      { key: 'app:<orgId>', ...value }
+//   orgs          { id, name, createdAt }
+//   users         { id, username, passwordHash, salt, role: 'admin'|'member', orgId, memberId?, name, createdAt }
+//
+// Every org-owned record (mail, members, requests, messages, notifications) carries an orgId.
 
-const STORES = ['images', 'mail', 'members', 'requests', 'messages', 'notifications'];
+const STORES = ['images', 'mail', 'members', 'requests', 'messages', 'notifications', 'orgs', 'users'];
 let dbPromise;
 
 function open() {
   dbPromise ??= new Promise((resolve, reject) => {
-    const req = indexedDB.open('ifc-mail-staff', 1);
+    const req = indexedDB.open('ifc-mail-staff', 2);
     req.onupgradeneeded = () => {
       const db = req.result;
-      for (const s of STORES) db.createObjectStore(s, { keyPath: 'id' });
-      db.createObjectStore('settings', { keyPath: 'key' });
+      for (const s of STORES) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings', { keyPath: 'key' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
