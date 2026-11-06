@@ -27,6 +27,7 @@ def main():
     ap.add_argument("--sample", type=int, default=20, help="how many envelopes (0 = all)")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--out", default=str(ROOT / "predictions" / "claude"))
+    ap.add_argument("--workers", type=int, default=4, help="parallel Claude calls")
     args = ap.parse_args()
 
     import os
@@ -55,7 +56,7 @@ def main():
         return pred
 
     print(f"Reading {len(labels)} envelopes with {pipeline.MODEL}...")
-    with ThreadPoolExecutor(4) as pool:
+    with ThreadPoolExecutor(args.workers) as pool:
         preds = list(pool.map(run, labels))
     failed = [p for p in preds if p["source"] == "manual"]
     print(f"{len(failed)} fell back to manual." + (f" e.g. {failed[0].get('error')}" if failed else ""))

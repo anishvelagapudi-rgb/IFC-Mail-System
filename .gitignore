@@ -17,3 +17,5 @@ predictions/
 #reference project
 reference/
 dataset-generator/heldout/
+dataset-generator/heldout1000/
+report.txt
