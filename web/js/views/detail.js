@@ -223,8 +223,7 @@ export function detailView(id) {
             if (!f) return;
             const bmp = await createImageBitmap(f);
             const blob = await toJpeg(bmp, bmp.width, bmp.height);
-            mail.scanImageIds.push(await store.addImage(blob, 'scan'));
-            await store.saveMail(mail);
+            await store.addScan(mail, blob);
             await store.resolveRequest(r, 'fulfilled', 'Staff added a photo of the contents. You can see it on this mail item.');
             render();
           } });

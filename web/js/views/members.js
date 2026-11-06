@@ -1,6 +1,5 @@
 import { h, badge, toast, fmtDay, emptyState } from '../dom.js';
 import * as store from '../store.js';
-import * as db from '../db.js';
 
 // The org's members: people who registered an account plus anyone staff added by hand
 // (so envelope names can still be matched before the person signs up).
@@ -9,8 +8,9 @@ export function membersView(focusId) {
   let query = '';
 
   async function render() {
-    const [members, mail, users] = await Promise.all([store.listMembers(), store.listMail(), db.getAll('users')]);
-    const userOf = (m) => users.find((u) => u.id === m.userId);
+    const [members, mail, users] = await Promise.all([store.listMembers(), store.listMail(), store.listAccounts()]);
+    const userOf = (m) => users.find((u) => u.memberId === m.id && u.status === 'active');
+    const pending = users.filter((u) => u.role === 'member' && u.status === 'pending');
     const mailCount = (m) => mail.filter((x) => x.recipient.memberId === m.id && x.status !== 'closed').length;
 
     const name = h('input', { required: true, placeholder: 'Full name' });
@@ -25,8 +25,12 @@ export function membersView(focusId) {
         'form',
         { class: 'row wrap', onsubmit: async (e) => {
           e.preventDefault();
-          await store.saveMember({ name: name.value.trim(), aliases: aliases.value.split(',').map((s) => s.trim()).filter(Boolean), phone: phone.value.trim() });
-          toast('Member added.');
+          try {
+            await store.saveMember({ name: name.value.trim(), aliases: aliases.value.split(',').map((s) => s.trim()).filter(Boolean), phone: phone.value.trim() });
+            toast('Member added.');
+          } catch (err) {
+            toast(err.message, 'err');
+          }
           render();
         } },
         name,
@@ -70,7 +74,11 @@ export function membersView(focusId) {
           { class: 'row wrap', onsubmit: async (e) => {
             e.preventDefault();
             m.trustedContacts.push({ id: store.newId(), name: cn.value.trim(), relationship: cr.value.trim(), phone: cp.value.trim(), address: ca.value.trim() });
-            await store.saveMember(m);
+            try {
+              await store.saveMember(m);
+            } catch (err) {
+              toast(err.message, 'err');
+            }
             render();
           } },
           cn,
@@ -78,6 +86,51 @@ export function membersView(focusId) {
           cp,
           ca,
           h('button', { class: 'btn', type: 'submit' }, 'Add trusted person'),
+        ),
+      );
+    };
+
+    // Sign-ups wait here until staff confirm who they are. Linking to an existing roster entry
+    // gives them the mail already held under that name; otherwise a new entry is created.
+    const unlinked = members.filter((m) => !users.some((u) => u.memberId === m.id && u.status === 'active'));
+    const approvalCard = (u) => {
+      const r = u.registration || {};
+      const guess = store.matchMember(r.name, unlinked);
+      const pick = h(
+        'select',
+        { 'aria-label': `Roster entry for ${u.username}`, value: guess ? guess.id : '' },
+        h('option', { value: '' }, 'New member from these details'),
+        unlinked.map((m) => h('option', { value: m.id }, `Link to ${m.name}${m.aliases.length ? ` (${m.aliases.join(', ')})` : ''}`)),
+      );
+      const act = (fn, msg) => async () => {
+        try {
+          await fn();
+          toast(msg);
+        } catch (err) {
+          toast(err.message, 'err');
+        }
+        render();
+      };
+      return h(
+        'div',
+        { class: 'card focus' },
+        h('div', { class: 'page-head' }, h('h3', null, r.name || u.name || u.username), h('div', { class: 'badges' }, badge('Waiting for approval', 'warn'))),
+        h(
+          'dl',
+          { class: 'facts' },
+          h('dt', null, 'Username'), h('dd', null, u.username),
+          h('dt', null, 'Other names'), h('dd', null, (r.aliases || []).join(', ') || '—'),
+          h('dt', null, 'Phone'), h('dd', null, r.phone || '—'),
+          h('dt', null, 'Email'), h('dd', null, r.email || '—'),
+          h('dt', null, 'Signed up'), h('dd', null, fmtDay(u.createdAt)),
+        ),
+        h('p', { class: 'hint' }, 'Check who this is before approving: once linked, they can see that person’s mail.'),
+        h(
+          'div',
+          { class: 'row wrap' },
+          pick,
+          h('button', { class: 'btn primary', type: 'button', onclick: act(() => store.approveAccount(u.id, pick.value || null), 'Account approved.') }, 'Approve'),
+          h('button', { class: 'btn', type: 'button', onclick: () => confirm(`Reject the sign-up from ${u.username}?`) && act(() => store.rejectAccount(u.id), 'Sign-up rejected.')() }, 'Reject'),
         ),
       );
     };
@@ -93,6 +146,8 @@ export function membersView(focusId) {
     root.replaceChildren(
       h('h1', null, `Members (${members.length})`),
       h('p', { class: 'hint' }, `${members.filter(userOf).length} registered an account · ${members.filter((m) => !userOf(m)).length} added by staff`),
+      pending.length ? h('h2', null, `Waiting for approval (${pending.length})`) : null,
+      ...pending.map(approvalCard),
       add,
       search,
       ...(shown.length ? shown.map(card) : [emptyState(members.length ? 'No one matches.' : 'No members yet.')]),

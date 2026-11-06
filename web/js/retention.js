@@ -4,7 +4,8 @@
 export const SENDER_TYPES = ['government', 'bank', 'healthcare', 'employer', 'personal', 'junk', 'unknown'];
 
 export const DEFAULT_SETTINGS = {
-  pipelineUrl: '',
+  followupAfterDays: 3,
+  minConfidence: 0.7,
   retentionDays: {
     government: 90,
     bank: 30,
@@ -21,10 +22,12 @@ export function baseDays(mail, settings) {
 }
 
 // Date after which staff may discard. Approved "extra time" requests push it out.
+// The server stores hold_until (same rule); prefer it when present.
 export function discardAfter(mail, settings) {
+  if (mail.holdUntil) return new Date(mail.holdUntil);
   const days = baseDays(mail, settings) + (mail.extraDays || 0);
   return new Date(new Date(mail.receivedAt).getTime() + days * 86400000);
 }
 
 const URGENT = /time sensitive|urgent|final notice|open immediately|important|court|hearing|deadline/i;
-export const isTimeSensitive = (mail) => (mail.notes || []).some((n) => URGENT.test(n));
+export const isTimeSensitive = (mail) => !!mail.urgent || (mail.notes || []).some((n) => URGENT.test(n));
