@@ -12,7 +12,7 @@ JPEG = b"\xff\xd8\xff\xe0" + b"0" * 100
 
 
 def _x(**kw):
-    base = dict(recipient_name="DOT H BRIGGS", sender_name=None, sender_organization="DMV", sender_type="government",
+    base = dict(return_address="DMV, PO Box 1, Raleigh NC", recipient_name="DOT H BRIGGS", sender_name=None, sender_organization="DMV", sender_type="government",
                 notes=["Time Sensitive"], urgent=True, legibility="clear", illegible_reason=None, confidence=0.95)
     return Extraction(**{**base, **kw})
 
@@ -44,6 +44,18 @@ def test_low_confidence_is_flagged_not_guessed():
 def test_claude_illegible_flag_wins():
     r = pipeline.apply_confidence(_x(legibility="illegible", illegible_reason="heavy blur"))
     assert r["illegible"] and r["illegible_reason"] == "heavy blur"
+
+
+def test_return_address_name_is_never_used_as_recipient():
+    r = pipeline.apply_confidence(_x(recipient_name="Paula Reyes", return_address="Paula Reyes 0110 Suarez Light, Kendrafort WA"))
+    assert r["illegible"] and r["recipient"]["name"] == "" and "return address" in r["illegible_reason"]
+    r = pipeline.apply_confidence(_x(recipient_name="Paula Reyes", sender_name="PAULA REYES", return_address=None))
+    assert r["illegible"]
+
+
+def test_current_resident_is_kept_not_flagged():
+    r = pipeline.apply_confidence(_x(recipient_name="CURRENT RESIDENT", sender_type="junk", confidence=0.9))
+    assert not r["illegible"] and r["recipient"]["name"] == "CURRENT RESIDENT"
 
 
 def test_no_key_means_manual_entry(monkeypatch):

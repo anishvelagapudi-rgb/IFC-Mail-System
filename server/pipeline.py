@@ -8,6 +8,7 @@ anything goes wrong, it returns a "manual" result so staff just type the details
 from __future__ import annotations
 
 import base64
+import re
 import logging
 import os
 from typing import Literal, Optional
@@ -26,6 +27,7 @@ SenderType = Literal["government", "bank", "healthcare", "employer", "personal",
 
 
 class Extraction(BaseModel):
+    return_address: Optional[str]
     recipient_name: Optional[str]
     sender_name: Optional[str]
     sender_organization: Optional[str]
@@ -41,8 +43,14 @@ SYSTEM = """You read photos of envelopes that arrived at a homeless shelter's ma
 each person their mail is waiting. You get two photos: the FRONT of the envelope, then the BACK.
 
 Return these fields:
-- recipient_name: the addressee's name exactly as printed or written (keep spelling and capitalisation). \
-Only the person's name: no "c/o" line, street address, or organization. null if there is no name you can read.
+- return_address: the full return address (the sender's block, usually top-left of the front or on the back \
+flap), transcribed as one line. null if there is none.
+- recipient_name: the addressee's name, taken ONLY from the delivery address block (usually the middle or lower \
+right of the front), exactly as printed or written (keep spelling and capitalisation). Only the name: no "c/o" line, \
+street address, organization, or presort lines like "ECRWSS" or "AUTO**5-DIGIT". \
+If it is addressed to "Current Resident", "Resident" or "Occupant", return that text as written. \
+NEVER use a name from the return address. If the addressee name is smudged, covered or missing, return null, \
+even if another name on the envelope is readable.
 - sender_name: the person named in the return address, as written, including any title such as "Dr." \
 Read handwritten return names too when you can make them out; null only if there is no person's name or you \
 genuinely cannot read it.
@@ -94,6 +102,19 @@ def manual(error: str | None = None) -> dict:
     }
 
 
+def _norm(s) -> str:
+    return " ".join(re.sub(r"[^a-z\s]", " ", (s or "").lower()).split())
+
+
+def _from_return_address(name: str, x: Extraction) -> bool:
+    """True if the "recipient" is really the sender's name, which Claude can grab when the
+    real addressee is unreadable. Sending that person someone else's mail is the worst failure."""
+    n = _norm(name)
+    if not n:
+        return False
+    return n == _norm(x.sender_name) or f" {n} " in f" {_norm(x.return_address)} "
+
+
 def apply_confidence(x: Extraction, min_confidence: float = MIN_CONFIDENCE) -> dict:
     """Turn Claude's answer into a result, refusing to guess when unsure."""
     conf = max(0.0, min(1.0, float(x.confidence)))
@@ -108,6 +129,8 @@ def apply_confidence(x: Extraction, min_confidence: float = MIN_CONFIDENCE) -> d
         "urgent": bool(x.urgent),
         "confidence": conf,
     }
+    if _from_return_address(r["recipient"]["name"], x) and not x.legibility == "illegible":
+        x = x.model_copy(update={"legibility": "illegible", "illegible_reason": "recipient matches the return address"})
     if x.legibility == "illegible" or conf < min_confidence or not r["recipient"]["name"]:
         r["legibility"] = "illegible"
         r["illegible"] = True
