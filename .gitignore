@@ -13,5 +13,7 @@ predictions/
 .env.*
 !.env.example
 
-# separate reference project
+
+#reference project
 reference/
+dataset-generator/heldout/
