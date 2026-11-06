@@ -57,7 +57,7 @@ export function inboxView() {
       search,
       rows.length
         ? h('ul', { class: 'mail-list' }, rows.map((m) => row(m, nameOf(m), openReq.has(m.id), settings)))
-        : emptyState(mail.length ? 'Nothing matches this filter.' : 'No mail yet. Scan the first item, or add sample data in Settings.'),
+        : emptyState(mail.length ? 'Nothing matches this filter.' : 'No mail yet. Scan the first item.'),
     );
   }
 

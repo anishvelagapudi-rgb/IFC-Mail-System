@@ -1,12 +1,16 @@
 import { h, toast } from '../dom.js';
 import * as auth from '../auth.js';
 import * as store from '../store.js';
-import * as db from '../db.js';
-import { createDemoOrg, DEMO_ACCOUNTS } from '../seed.js';
+
+// Created by `python -m backend.seed`. Shown so the demo can be tried out of the box.
+const DEMO_ACCOUNTS = [
+  { username: 'staff', password: 'staff123', role: 'Org admin' },
+  { username: 'dorothy', password: 'dorothy123', role: 'Member (Dorothy Briggs)' },
+];
 
 const field = (label, input, hint) => h('label', { class: 'field' }, h('span', null, label), input, hint ? h('small', null, hint) : null);
 
-// mode: 'login' | 'member' (member sign-up) | 'org' (new organization + admin)
+// mode: 'login' | 'member' (member sign-up; an admin approves it before anything else works)
 export function loginView(mode = 'login', onDone) {
   const root = h('section', { class: 'view auth' });
 
@@ -44,7 +48,8 @@ export function loginView(mode = 'login', onDone) {
       'form',
       { class: 'card' },
       h('h2', null, 'Create a member account'),
-      orgs.length ? null : h('p', { class: 'hint' }, 'No organizations exist yet. Staff need to create one first.'),
+      h('p', { class: 'hint' }, 'Staff at your organization will check your details and approve your account before you can see mail.'),
+      orgs.length ? null : h('p', { class: 'hint' }, 'No organizations are set up yet.'),
       field('Organization that holds your mail', org),
       field('Full name', name, 'As it usually appears on your mail.'),
       field('Other names on your mail', aliases, 'Nicknames or spellings, comma-separated. Helps staff match your mail.'),
@@ -68,67 +73,33 @@ export function loginView(mode = 'login', onDone) {
     return f;
   }
 
-  function orgForm() {
-    const org = h('input', { required: true });
-    const name = h('input', { required: true, autocomplete: 'name' });
-    const u = h('input', { required: true, autocomplete: 'username', autocapitalize: 'none' });
-    const p = h('input', { type: 'password', required: true, autocomplete: 'new-password' });
-    const f = h(
-      'form',
-      { class: 'card' },
-      h('h2', null, 'Register an organization'),
-      h('p', { class: 'hint' }, 'Creates the organization and its first admin account. Admins can add more staff logins in Settings.'),
-      field('Organization name', org),
-      field('Your name', name),
-      field('Admin username', u),
-      field('Password', p, `At least ${auth.MIN_PASSWORD} characters.`),
-      h('button', { class: 'btn primary', type: 'submit' }, 'Create organization'),
-    );
-    f.addEventListener('submit', submitting(f, () => auth.registerOrg({ orgName: org.value, name: name.value, username: u.value, password: p.value })));
-    return f;
-  }
-
-  async function demoCard() {
-    const users = await db.getAll('users');
-    const has = users.some((u) => u.username === 'staff');
+  function demoCard() {
     return h(
       'details',
-      { class: 'card demo', open: !users.length || has },
+      { class: 'card demo' },
       h('summary', null, 'Try it with demo accounts'),
-      h('p', { class: 'hint' }, 'Data is stored only in this browser. This login system is temporary and not secure, so use sample data only, never real member mail.'),
-      has
-        ? h('ul', { class: 'plain-list' }, DEMO_ACCOUNTS.map((a) => h('li', null, h('strong', null, a.role), ` — ${a.username} / ${a.password}`)))
-        : h('button', { class: 'btn', type: 'button', onclick: async () => {
-            try {
-              await createDemoOrg();
-              toast('Demo organization created.');
-              render();
-            } catch (err) {
-              toast(err.message, 'err');
-            }
-          } }, 'Create demo organization and accounts'),
-      h('button', { class: 'btn link', type: 'button', onclick: async () => {
-        if (!confirm('Delete ALL organizations, accounts, mail and messages stored in this browser?')) return;
-        await store.wipeEverything();
-        toast('All local data deleted.');
-        render();
-      } }, 'Reset all local data'),
+      h('p', { class: 'hint' }, 'Demo organization with sample data only. Never enter real member mail into a demo.'),
+      h('ul', { class: 'plain-list' }, DEMO_ACCOUNTS.map((a) => h('li', null, h('strong', null, a.role), ` — ${a.username} / ${a.password}`))),
     );
   }
 
   async function render() {
     const tabs = [
       ['login', 'Sign in'],
-      ['member', 'New member'],
-      ['org', 'New organization'],
+      ['member', 'Create an account'],
     ];
-    const form = mode === 'login' ? loginForm() : mode === 'member' ? await memberForm() : orgForm();
+    let form;
+    try {
+      form = mode === 'login' ? loginForm() : await memberForm();
+    } catch (err) {
+      form = h('p', { class: 'card' }, `Could not load organizations: ${err.message}`);
+    }
     root.replaceChildren(
       h('h1', null, 'IFC Mail'),
       h('p', { class: 'hint' }, 'See your mail, message staff, and ask for more time, a photo, or forwarding.'),
       h('div', { class: 'tabs', role: 'tablist' }, tabs.map(([k, label]) => h('button', { class: `tab ${k === mode ? 'on' : ''}`, type: 'button', role: 'tab', 'aria-selected': k === mode, onclick: () => ((mode = k), render()) }, label))),
       form,
-      await demoCard(),
+      demoCard(),
     );
     form.querySelector('input,select')?.focus();
   }

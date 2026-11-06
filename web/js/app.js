@@ -1,4 +1,4 @@
-import { h } from './dom.js';
+import { h, toast } from './dom.js';
 import * as store from './store.js';
 import * as auth from './auth.js';
 import { discardAfter } from './retention.js';
@@ -11,6 +11,7 @@ import { discardView } from './views/discard.js';
 import { membersView } from './views/members.js';
 import { settingsView } from './views/settings.js';
 import { messagesView, conversationView } from './views/messages.js';
+import { followupView, pendingView } from './views/followup.js';
 import { memberMailListView } from './views/member/mail-list.js';
 import { memberMailDetailView } from './views/member/mail-detail.js';
 import { memberMessagesView } from './views/member/messages.js';
@@ -27,6 +28,7 @@ const STAFF_ROUTES = [
   [/^\/messages$/, () => messagesView(), '/messages'],
   [/^\/messages\/([^/]+)$/, (id) => conversationView(id, refreshNav), '/messages'],
   [/^\/discard$/, () => discardView(), '/discard'],
+  [/^\/followup$/, () => followupView(), '/followup'],
   [/^\/members(?:\/([^/]+))?$/, (id) => membersView(id), '/members'],
   [/^\/settings$/, () => settingsView(), '/settings'],
 ];
@@ -35,8 +37,9 @@ const STAFF_NAV = [
   ['/capture', 'Scan', null],
   ['/requests', 'Requests', 'requests'],
   ['/messages', 'Messages', 'unread'],
+  ['/followup', 'Follow-up', null],
   ['/discard', 'Discard', 'discard'],
-  ['/members', 'Members', null],
+  ['/members', 'Members', 'pending'],
   ['/settings', 'Settings', null],
 ];
 
@@ -60,7 +63,7 @@ let current = null;
 let currentNav = '/';
 
 async function staffCounts() {
-  const [mail, requests, settings, messages] = await Promise.all([store.listMail(), store.listRequests(), store.getSettings(), store.listAllMessages()]);
+  const [mail, requests, settings, messages, accounts] = await Promise.all([store.listMail(), store.listRequests(), store.getSettings(), store.listAllMessages(), store.listAccounts()]);
   const active = mail.filter((m) => m.status !== 'closed');
   const ids = new Set(active.map((m) => m.id));
   return {
@@ -68,6 +71,7 @@ async function staffCounts() {
     requests: requests.filter((r) => r.status === 'open' && ids.has(r.mailId)).length,
     discard: active.filter((m) => discardAfter(m, settings) <= new Date()).length,
     unread: messages.filter((m) => !m.seenByStaff).length,
+    pending: accounts.filter((a) => a.status === 'pending').length,
   };
 }
 
@@ -86,10 +90,10 @@ async function renderNav(activePath) {
     return;
   }
   const isStaff = s.role === 'admin';
-  const c = isStaff ? await staffCounts() : await memberCounts(s.memberId);
+  const c = s.status !== 'active' ? {} : await (isStaff ? staffCounts() : memberCounts(s.memberId)).catch(() => ({}));
   brandRole.textContent = isStaff ? 'staff' : '';
   nav.replaceChildren(
-    ...(isStaff ? STAFF_NAV : MEMBER_NAV).map(([path, label, key]) =>
+    ...(s.status !== 'active' ? [] : isStaff ? STAFF_NAV : MEMBER_NAV).map(([path, label, key]) =>
       h('a', { href: `#${path}`, class: path === activePath ? 'on' : '', 'aria-current': path === activePath ? 'page' : null }, label, key && c[key] ? h('span', { class: 'pill' }, c[key]) : null),
     ),
   );
@@ -112,9 +116,19 @@ function show(view, navPath) {
 }
 
 async function route() {
-  const s = await auth.restore();
+  let s;
+  try {
+    s = await auth.restore();
+  } catch (err) {
+    main.replaceChildren(h('section', { class: 'view' }, h('h1', null, 'Cannot reach IFC Mail'), h('p', null, err.message), h('button', { class: 'btn', type: 'button', onclick: route }, 'Try again')));
+    return;
+  }
   if (!s) {
     show(loginView('login', goHome), null);
+    return;
+  }
+  if (s.status !== 'active') {
+    show(pendingView(s, async () => ((await auth.reload())?.status === 'active' ? goHome() : toast('Not approved yet. Please check with staff.', 'warn'))), null);
     return;
   }
   const path = location.hash.slice(1) || '/';

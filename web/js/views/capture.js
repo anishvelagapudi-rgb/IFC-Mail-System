@@ -1,7 +1,6 @@
 import { h, toast } from '../dom.js';
 import { captureWidget } from '../camera.js';
 import { processEnvelope } from '../pipeline.js';
-import * as store from '../store.js';
 
 // Three steps: front -> back -> review photos -> process & save.
 export function captureView() {
@@ -63,10 +62,9 @@ export function captureView() {
       go.disabled = true;
       go.textContent = 'Processing…';
       try {
-        const settings = await store.getSettings();
-        const processed = await processEnvelope(photos.front, photos.back, settings);
-        const mail = await store.createMail({ front: photos.front, back: photos.back, processed });
-        if (processed.processing.error) toast(`Pipeline unavailable (${processed.processing.error}). Enter details manually.`, 'warn');
+        const mail = await processEnvelope(photos.front, photos.back);
+        if (mail.processing?.error) toast(`Pipeline unavailable (${mail.processing.error}). Enter details manually.`, 'warn');
+        else if (mail.legibility === 'illegible') toast('Could not read this one reliably. Please enter the details.', 'warn');
         location.hash = `#/mail/${mail.id}`;
       } catch (err) {
         toast(`Could not save: ${err.message}`, 'err');

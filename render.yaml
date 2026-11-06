@@ -1,0 +1,33 @@
+# Render Blueprint: one web service runs the Flask API and serves web/ (HTTPS is automatic).
+# Deploy: Render dashboard -> New -> Blueprint -> pick this repo. Fill in the secret values
+# when prompted (they are marked sync: false, so they never live in this file).
+services:
+  - type: web
+    name: ifc-mail
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    # --timeout: one scan waits for the vision model (usually a few seconds).
+    startCommand: gunicorn 'backend.app:create_app()' --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: STORAGE_BUCKET
+        value: mail-images
+      - key: PIPELINE_MODEL
+        value: claude-haiku-5-5
+      - key: AUTH_EMAIL_DOMAIN
+        value: users.ifc-mail.invalid
+      - key: SMS_PROVIDER
+        value: simulated
