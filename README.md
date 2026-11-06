@@ -26,8 +26,9 @@ For people without a stable address, a shelter's mail program is often the only 
 - [ ] Image-processing pipeline (text extraction plus illegible flagging)
 - [ ] Benchmark the pipeline on synthetic and real (team-owned) mail photos
 - [ ] Database schema for mail items, members, notifications, and requests
-- [ ] Staff web UI for capturing and managing mail
-- [ ] Member web UI (likely a PWA) for viewing mail and making requests
+- [x] Staff web UI for capturing and managing mail (prototype, browser-only storage)
+- [x] Member web UI for viewing mail, messaging staff and making requests (prototype)
+- [ ] Real authentication on a backend (the current login is a temporary, client-side stand-in)
 - [ ] Messaging system for redirecting mail to trusted contacts
 - [ ] SMS notifications and SMS-based requests
 - [ ] Sender-based retention rules
@@ -39,7 +40,8 @@ For people without a stable address, a shelter's mail program is often the only 
 dataset-generator/   Synthetic envelope images + labels, and the OCR evaluator
 pipeline/            Image processing and text extraction (planned)
 backend/             API and database (planned)
-web/                 Staff web app: scan mail, review, requests, messaging, discard queue (member UI planned)
+web/                 Web app: org admin side (scan mail, review, requests, messages, members, discard queue)
+                     and member side (my mail, requests, messages, trusted people)
 docs/                System design and decisions
 ```
 
@@ -59,14 +61,19 @@ python generate.py --count 5000 --seed 42 --out dataset/
 
 See [`dataset-generator/README.md`](dataset-generator/README.md) for options and the evaluation script.
 
-To run the staff web app (no Node or build step needed):
+To run the web app (no Node or build step needed):
 
 ```bash
 python -m http.server 8080 --directory web
-# open http://localhost:8080  (Settings -> "Load sample data" to try it out)
+# open http://localhost:8080 and click "Create demo organization and accounts"
 ```
 
-Data is stored only in your browser for now, so use sample data, not real member mail. The camera needs `localhost` or `https`. To test from a phone, serve over https, or use the "Choose or take photo" button.
+Demo logins: `staff` / `staff123` (org admin) and `dorothy` / `dorothy123` (member). You can also register a new organization (creates its first admin) or a new member account under an existing organization.
+
+- **Org admins** scan and add mail, review requests, message members, see the registration details of members who signed up with their org, manage staff logins, and run the discard queue. Each admin only sees their own organization's data.
+- **Members** see photos of all their mail, message staff, and ask for more time, a photo of the contents, and/or forwarding to trusted people (names plus a forwarding address), all in one request.
+
+The login system is **temporary**: accounts and password hashes are stored in the browser and checked in client code, so it is not secure. It exists to build and test the two roles until the backend has real authentication. Data is stored only in your browser for now, so use sample data, not real member mail. The camera needs `localhost` or `https`. To test from a phone, serve over https, or use the "Choose or take photo" button.
 
 ## Privacy
 
