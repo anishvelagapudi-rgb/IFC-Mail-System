@@ -7,3 +7,6 @@ dataset-generator/fonts/
 dataset-generator/dataset/
 predictions/
 *.zip
+
+#reference project
+reference/
