@@ -39,7 +39,7 @@ For people without a stable address, a shelter's mail program is often the only 
 dataset-generator/   Synthetic envelope images + labels, and the OCR evaluator
 pipeline/            Image processing and text extraction (planned)
 backend/             API and database (planned)
-web/                 Staff and member interfaces (planned)
+web/                 Staff web app: scan mail, review, requests, messaging, discard queue (member UI planned)
 docs/                System design and decisions
 ```
 
@@ -58,6 +58,15 @@ python generate.py --count 5000 --seed 42 --out dataset/
 ```
 
 See [`dataset-generator/README.md`](dataset-generator/README.md) for options and the evaluation script.
+
+To run the staff web app (no Node or build step needed):
+
+```bash
+python -m http.server 8080 --directory web
+# open http://localhost:8080  (Settings -> "Load sample data" to try it out)
+```
+
+Data is stored only in your browser for now, so use sample data, not real member mail. The camera needs `localhost` or `https`. To test from a phone, serve over https, or use the "Choose or take photo" button.
 
 ## Privacy
 
