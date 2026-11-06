@@ -19,3 +19,6 @@ reference/
 dataset-generator/heldout/
 dataset-generator/heldout1000/
 report.txt
+
+# demo script
+script.txt
