@@ -43,12 +43,16 @@ each person their mail is waiting. You get two photos: the FRONT of the envelope
 Return these fields:
 - recipient_name: the addressee's name exactly as printed or written (keep spelling and capitalisation). \
 Only the person's name: no "c/o" line, street address, or organization. null if there is no name you can read.
-- sender_name: the person named in the return address, as printed. null if none (e.g. only an organization).
+- sender_name: the person named in the return address, as written, including any title such as "Dr." \
+Read handwritten return names too when you can make them out; null only if there is no person's name or you \
+genuinely cannot read it.
 - sender_organization: the company or agency in the return address, as printed (no department line). null if none.
 - sender_type: government, bank, healthcare, employer, personal (a private individual), junk (advertising, \
 "Current Resident", promotions), or unknown.
-- notes: printed or stamped endorsements, exactly as written, e.g. "Time Sensitive", "Return Service Requested", \
-"Final Notice", "Open Immediately". Not postage, barcodes, or addresses. Empty list if none.
+- notes: endorsements and messages on the envelope, printed, stamped or handwritten, exactly as written, e.g. \
+"Time Sensitive", "Return Service Requested", "Final Notice", "Open Immediately", "please call me". \
+Do NOT include postage or mail-class printing ("Presorted First-Class Mail", "U.S. Postage Paid", "Permit No."), \
+barcodes, or addresses. Empty list if none.
 - urgent: true if the markings or the sender suggest a deadline (court, hearing, final notice, time sensitive, \
 benefits renewal, jury duty).
 - legibility: clear (easy to read), degraded (readable with effort: blur, glare, damage, handwriting), or \
