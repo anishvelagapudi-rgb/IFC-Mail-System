@@ -7,3 +7,11 @@ dataset-generator/fonts/
 dataset-generator/dataset/
 predictions/
 *.zip
+
+# secrets: only .env.example is committed
+.env
+.env.*
+!.env.example
+
+# separate reference project
+reference/

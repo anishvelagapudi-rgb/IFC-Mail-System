@@ -11,7 +11,7 @@ export function settingsView() {
     const s = await store.getSettings();
     const me = auth.current();
     const staff = await auth.listStaff();
-    const url = h('input', { type: 'url', value: s.pipelineUrl, placeholder: 'https://… (leave empty for manual entry)' });
+    const url = h('input', { type: 'url', value: s.pipelineUrl, placeholder: 'Leave empty to use Claude via the local server' });
     const days = Object.fromEntries(SENDER_TYPES.map((t) => [t, h('input', { type: 'number', min: 1, max: 730, value: s.retentionDays[t], class: 'tiny', 'aria-label': `${t} hold days` })]));
 
     const save = async () => {
@@ -55,7 +55,7 @@ export function settingsView() {
         'div',
         { class: 'card' },
         h('h2', null, 'Image-processing endpoint'),
-        h('p', { class: 'hint' }, 'Photos are POSTed here as multipart form data (front, back). See js/pipeline.js for the expected JSON reply. Until set, staff enter details by hand.'),
+        h('p', { class: 'hint' }, 'Leave empty to have Claude read envelopes through the local server (needs ANTHROPIC_API_KEY in .env). Without a key, staff enter details by hand. To use a different reader, enter its URL; see js/pipeline.js for the expected reply.'),
         url,
       ),
       h('div', { class: 'card' }, h('h2', null, 'Hold period by sender type (days)'), h('p', { class: 'hint' }, 'Placeholder values: confirm with IFC.'), h('div', { class: 'grid-days' }, SENDER_TYPES.map((t) => h('label', { class: 'field' }, h('span', null, t), days[t])))),

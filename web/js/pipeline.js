@@ -1,7 +1,8 @@
 // Image-processing adapter.
 //
-// If Settings -> "Pipeline URL" is set, the front/back photos are POSTed there as multipart
-// form data (fields `front` and `back`, both JPEG). The endpoint should reply with JSON shaped
+// The front/back photos are POSTed as multipart form data (fields `front` and `back`, both JPEG)
+// to Settings -> "Pipeline URL", or by default to /api/extract on the local demo server
+// (server/app.py), which asks Claude to read the envelope. The endpoint should reply with JSON shaped
 // like the dataset-generator labels (any subset of fields):
 //
 //   {
@@ -12,8 +13,8 @@
 //     "notes": ["Return Service Requested"]
 //   }
 //
-// With no URL configured (or if the call fails) the item is created empty and flagged for
-// manual entry, so staff never lose a photo.
+// If the server has no API key, Claude is unsure, or the call fails, the item is still saved
+// for manual entry (or flagged illegible), so staff never lose a photo and nothing is guessed.
 
 export async function processEnvelope(front, back, settings) {
   const manual = (error) => ({
@@ -24,17 +25,18 @@ export async function processEnvelope(front, back, settings) {
     notes: [],
   });
 
-  if (!settings.pipelineUrl) return manual();
+  const url = settings.pipelineUrl || '/api/extract';
 
   try {
     const body = new FormData();
     body.append('front', front, 'front.jpg');
     body.append('back', back, 'back.jpg');
-    const res = await fetch(settings.pipelineUrl, { method: 'POST', body });
+    const res = await fetch(url, { method: 'POST', body });
     if (!res.ok) throw new Error(`Pipeline returned HTTP ${res.status}`);
     const j = await res.json();
+    if (j.source === 'manual') return manual(j.error);
     return {
-      processing: { source: 'pipeline' },
+      processing: { source: j.source || 'pipeline' },
       legibility: ['clear', 'degraded', 'illegible'].includes(j.legibility) ? j.legibility : null,
       illegibleReason: j.illegible_reason || null,
       sender: {
