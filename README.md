@@ -2,7 +2,7 @@
 
 A digital mail intake and notification system for people experiencing homelessness, built with input from the [Inter-Faith Council for Social Service (IFC)](https://www.ifcweb.org/) in Chapel Hill and Carrboro, NC.
 
-> **Status:** Early development. The synthetic envelope dataset generator is being built first so the image-processing pipeline can be tested before it touches real mail.
+> **Status:** Early development. The synthetic envelope dataset generator and a browser-only prototype of the staff and member web app are built. The image-processing pipeline is next; the web app already has an adapter (`web/js/pipeline.js`) ready to call it.
 
 ## The problem
 
@@ -22,7 +22,7 @@ For people without a stable address, a shelter's mail program is often the only 
 
 ## Roadmap
 
-- [ ] Synthetic envelope dataset generator with ground-truth labels and an evaluation script
+- [x] Synthetic envelope dataset generator with ground-truth labels and an evaluation script
 - [ ] Image-processing pipeline (text extraction plus illegible flagging)
 - [ ] Benchmark the pipeline on synthetic and real (team-owned) mail photos
 - [ ] Database schema for mail items, members, notifications, and requests
@@ -38,12 +38,11 @@ For people without a stable address, a shelter's mail program is often the only 
 
 ```
 dataset-generator/   Synthetic envelope images + labels, and the OCR evaluator
-pipeline/            Image processing and text extraction (planned)
-backend/             API and database (planned)
 web/                 Web app: org admin side (scan mail, review, requests, messages, members, discard queue)
                      and member side (my mail, requests, messages, trusted people)
-docs/                System design and decisions
 ```
+
+Planned, not yet created: `pipeline/` (image processing and text extraction), `backend/` (API and database), `docs/` (system design and decisions).
 
 *Update this section as the layout changes.*
 
